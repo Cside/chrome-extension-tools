@@ -28,3 +28,4 @@ If these plugins have helped you ship your product faster, please consider
 
 We encourage pull requests! This is a
 [pnpm monorepo](https://pnpm.io/workspaces), so use pnpm instead of Yarn or npm.
+
