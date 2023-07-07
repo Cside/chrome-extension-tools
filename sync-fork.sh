@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-set -eux;
+set -eux
 
 date=$(date +%Y-%m-%d)
-branch="fix-$date";
+branch="fix-$date"
 
-if ! git remote -v | grep upstream > /dev/null; then
-  git remote add upstream git@github.com:crxjs/chrome-extension-tools.git;
-fi;
+if ! git remote -v | grep upstream >/dev/null; then
+  git remote add upstream git@github.com:crxjs/chrome-extension-tools.git
+fi
 
-git checkout main;
-git checkout -b "$branch";
+git checkout main
+git checkout -b "$branch"
 
-git fetch upstream;
-git merge upstream/main;
+git fetch upstream
+git merge upstream/main
 
-pnpm install;
-pnpm build:vite-plugin;
+pnpm install
+pnpm build:vite-plugin
 
-read -p $'Edit the version of package.json [OK]\n'
+read -rp $'Edit the version of package.json [OK]'
 vi packages/vite-plugin/package.json
 
-git add .;
-git commit -m "Update on $date";
-git push origin "$branch";
+git add .
+git commit -m "Update on $date"
+git push origin "$branch"
 
 open "https://github.com/Cside/chrome-extension-tools/compare/Cside:main...Cside:chrome-vite-plugin:$branch"
