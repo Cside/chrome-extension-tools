@@ -17,6 +17,14 @@ interface WebAccessibleResourceById {
     resources: string[];
     use_dynamic_url?: boolean;
 }
+interface ChromeManifestBackground {
+    service_worker: string;
+    type?: 'module';
+}
+interface FirefoxManifestBackground {
+    scripts: string[];
+    persistent?: false;
+}
 interface ManifestV3 {
     manifest_version: number;
     name: string;
@@ -26,10 +34,7 @@ interface ManifestV3 {
     icons?: chrome.runtime.ManifestIcons | undefined;
     action?: chrome.runtime.ManifestAction | undefined;
     author?: string | undefined;
-    background?: {
-        service_worker: string;
-        type?: 'module';
-    } | undefined;
+    background?: ChromeManifestBackground | FirefoxManifestBackground | undefined;
     chrome_settings_overrides?: {
         homepage?: string | undefined;
         search_provider?: chrome.runtime.SearchProvider | undefined;
@@ -232,9 +237,15 @@ declare type CrxDevScriptId = {
     type: 'module' | 'iife';
 };
 interface CrxPlugin extends Plugin {
-    /** Runs during the transform hook for the manifest. Filenames use input filenames. */
+    /**
+     * Runs during the transform hook for the manifest. Filenames use input
+     * filenames.
+     */
     transformCrxManifest?: (this: PluginContext, manifest: ManifestV3) => Promise<ManifestV3 | null | undefined> | ManifestV3 | null | undefined;
-    /** Runs during generateBundle, before manifest output. Filenames use output filenames. */
+    /**
+     * Runs during generateBundle, before manifest output. Filenames use output
+     * filenames.
+     */
     renderCrxManifest?: (this: PluginContext, manifest: ManifestV3, bundle: OutputBundle) => Promise<ManifestV3 | null | undefined> | ManifestV3 | null | undefined;
     /**
      * Runs in the file writer on content scripts during development. `script.id`
@@ -249,7 +260,13 @@ interface CrxOptions {
         injectCss?: boolean;
     };
     fastGlobOptions?: Options;
+    /**
+     * The browser that this extension is targeting, can be "firefox" or "chrome".
+     * Default is "chrome".
+     */
+    browser?: Browser;
 }
+declare type Browser = 'firefox' | 'chrome';
 
 /** Resolves when all existing files in scriptFiles are written. */
 declare function allFilesReady(): Promise<void>;

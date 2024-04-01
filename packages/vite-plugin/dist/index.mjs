@@ -11,7 +11,7 @@ import * as lexer from 'es-module-lexer';
 import { readFile as readFile$1 } from 'fs/promises';
 import MagicString from 'magic-string';
 import convertSourceMap from 'convert-source-map';
-import { createLogger } from 'vite';
+import { createLogger, version } from 'vite';
 import { readFileSync, existsSync, promises } from 'fs';
 import { createRequire } from 'module';
 import fg from 'fast-glob';
@@ -275,6 +275,7 @@ const workerClientId = "/@crx/client-worker";
 
 const pluginBackground = () => {
   let config;
+  let browser;
   return [
     {
       name: "crx:background-client",
@@ -297,23 +298,37 @@ const pluginBackground = () => {
       name: "crx:background-loader-file",
       // this should happen after other plugins; the loader file is an implementation detail
       enforce: "post",
+      async config(config2) {
+        const opts = await getOptions(config2);
+        browser = opts.browser || "chrome";
+      },
       configResolved(_config) {
         config = _config;
       },
       renderCrxManifest(manifest) {
-        const worker = manifest.background?.service_worker;
+        const worker = browser === "firefox" ? manifest.background?.scripts[0] : manifest.background?.service_worker;
         let loader;
         if (config.command === "serve") {
           const port = config.server.port?.toString();
           if (typeof port === "undefined")
             throw new Error("server port is undefined in watch mode");
-          loader = `import 'http://localhost:${port}/@vite/env';
+          if (browser === "firefox") {
+            loader = `import('http://localhost:${port}/@vite/env');
 `;
-          loader += `import 'http://localhost:${port}${workerClientId}';
+            loader += `import('http://localhost:${port}${workerClientId}');
 `;
-          if (worker)
-            loader += `import 'http://localhost:${port}/${worker}';
+            if (worker)
+              loader += `import('http://localhost:${port}/${worker}');
 `;
+          } else {
+            loader = `import 'http://localhost:${port}/@vite/env';
+`;
+            loader += `import 'http://localhost:${port}${workerClientId}';
+`;
+            if (worker)
+              loader += `import 'http://localhost:${port}/${worker}';
+`;
+          }
         } else if (worker) {
           loader = `import './${worker}';
 `;
@@ -326,10 +341,17 @@ const pluginBackground = () => {
           fileName: getFileName({ type: "loader", id: "service-worker" }),
           source: loader
         });
-        manifest.background = {
-          service_worker: this.getFileName(refId),
-          type: "module"
-        };
+        if (browser !== "firefox") {
+          manifest.background = {
+            service_worker: this.getFileName(refId),
+            type: "module"
+          };
+        } else {
+          manifest.background = {
+            scripts: [this.getFileName(refId)],
+            type: "module"
+          };
+        }
         return manifest;
       }
     }
@@ -977,7 +999,9 @@ async function manifestFiles(manifest, options = {}) {
   ) ?? [];
   const contentScripts = manifest.content_scripts?.flatMap(({ js }) => js) ?? [];
   const contentStyles = manifest.content_scripts?.flatMap(({ css }) => css);
-  const serviceWorker = manifest.background?.service_worker;
+  const serviceWorker = manifest.background && "service_worker" in manifest.background ? manifest.background.service_worker : void 0;
+  const backgroundScripts = manifest.background && "scripts" in manifest.background ? manifest.background.scripts : void 0;
+  const background = serviceWorker ? [serviceWorker].filter(isString) : backgroundScripts ? backgroundScripts.filter(isString) : [];
   const htmlPages = htmlFiles(manifest);
   const icons = [
     Object.values(
@@ -1007,7 +1031,7 @@ async function manifestFiles(manifest, options = {}) {
     icons: [...new Set(icons)].filter(isString),
     locales: [...new Set(locales)].filter(isString),
     rulesets: [...new Set(rulesets)].filter(isString),
-    background: [serviceWorker].filter(isString),
+    background,
     webAccessibleResources
   };
 }
@@ -1214,7 +1238,6 @@ const pluginHMR = () => {
           if (relFiles.has(background) || modules.some(isImporter(join(server.config.root, background)))) {
             debug$1("sending runtime reload");
             server.ws.send(crxRuntimeReload);
-            return [];
           }
         }
         for (const [key, script] of contentScripts)
@@ -1386,9 +1409,9 @@ const pluginHtmlInlineScripts = () => {
   };
 };
 
-var precontrollerJs = "const id = setInterval(() => location.reload(), 100);\nsetTimeout(() => clearInterval(id), 5e3);\n";
+var loadingPageScript = "const VITE_URL = \"http://localhost:%PORT%\";\ndocument.body.innerHTML = `\n<div\n      id=\"app\"\n      style=\"\n        border: 1px solid #ddd;\n        padding: 20px;\n        border-radius: 5px;\n        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);\n      \"\n    >\n      <h1 style=\"color: #333\">Vite Dev Mode</h1>\n      <p style=\"color: #666\">\n        Cannot connect to the Vite Dev Server on <a href=\"${VITE_URL}\">${VITE_URL}</a>\n      </p>\n      <p style=\"color: #666\">\n        Double-check that Vite is working and reload the extension.\n      </p>\n      <p style=\"color: #666\">\n        This page will close when the extension reloads.\n      </p>\n      <button\n        style=\"\n          padding: 10px 20px;\n          border: none;\n          background-color: #007bff;\n          color: #fff;\n          border-radius: 5px;\n          cursor: pointer;\n        \"\n      >\n        Reload Extension\n      </button>\n    </div>`;\ndocument.body.querySelector(\"button\")?.addEventListener(\"click\", () => {\n  chrome.runtime.reload();\n});\nlet tries = 0;\nlet ready = false;\ndo {\n  try {\n    await fetch(VITE_URL);\n    ready = true;\n  } catch {\n    const timeout = Math.min(100 * Math.pow(2, ++tries), 5e3);\n    console.log(`[CRXJS] Vite Dev Server is not available on ${VITE_URL}`);\n    console.log(`[CRXJS] Retrying in ${timeout}ms...`);\n    await new Promise((resolve) => setTimeout(resolve, timeout));\n  }\n} while (!ready);\nlocation.reload();\n";
 
-var precontrollerHtml = "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <title>Waiting for the extension service worker...</title>\n    <script src=\"%SCRIPT%\"></script>\n  </head>\n  <body>\n    <h1>Waiting for service worker</h1>\n\n    <p>\n      If you see this message, it means the service worker has not loaded fully.\n    </p>\n\n    <p>This page is never added in production.</p>\n  </body>\n</html>\n";
+var loadingPageHtml = "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <title>Vite Dev Mode</title>\n    <script src=\"%SCRIPT%\" type=\"module\"></script>\n  </head>\n  <body\n    style=\"font-family: Arial, sans-serif; padding: 20px; text-align: center\"\n  >\n    <h1>Vite Dev Mode</h1>\n  </body>\n</html>\n";
 
 const { readFile } = promises;
 const pluginManifest = () => {
@@ -1567,7 +1590,7 @@ const pluginManifest = () => {
                   })
                 );
               }
-          if (manifest2.background?.service_worker) {
+          if (manifest2.background && "service_worker" in manifest2.background) {
             const file = manifest2.background.service_worker;
             const id2 = join(config.root, file);
             const refId2 = this.emitFile({
@@ -1576,6 +1599,16 @@ const pluginManifest = () => {
               name: basename(file)
             });
             manifest2.background.service_worker = refId2;
+          }
+          if (manifest2.background && "scripts" in manifest2.background) {
+            const file = manifest2.background.scripts[0];
+            const id2 = join(config.root, file);
+            const refId2 = this.emitFile({
+              type: "chunk",
+              id: id2,
+              name: basename(file)
+            });
+            manifest2.background.scripts = [refId2];
           }
           for (const file of htmlFiles(manifest2)) {
             const id2 = join(config.root, file);
@@ -1601,10 +1634,15 @@ const pluginManifest = () => {
               );
             }
         } else {
-          if (manifest2.background?.service_worker) {
+          if (manifest2.background && "service_worker" in manifest2.background) {
             const ref = manifest2.background.service_worker;
             const name = this.getFileName(ref);
             manifest2.background.service_worker = name;
+          }
+          if (manifest2.background && "scripts" in manifest2.background) {
+            const ref = manifest2.background.scripts[0];
+            const name = this.getFileName(ref);
+            manifest2.background.scripts = [name];
           }
           manifest2.content_scripts = manifest2.content_scripts?.map(
             ({ js = [], ...rest }) => {
@@ -1674,17 +1712,20 @@ Public dir: "${config.publicDir}"`
         if (config.command === "serve" && files.html.length) {
           const refId2 = this.emitFile({
             type: "asset",
-            name: "precontroller.js",
-            source: precontrollerJs
+            name: "loading-page.js",
+            source: loadingPageScript.replace(
+              "%PORT%",
+              `${config.server.port ?? 0}`
+            )
           });
-          const precontrollerJsName = this.getFileName(refId2);
+          const loadingPageScriptName = this.getFileName(refId2);
           files.html.map(
             (f) => this.emitFile({
               type: "asset",
               fileName: f,
-              source: precontrollerHtml.replace(
+              source: loadingPageHtml.replace(
                 "%SCRIPT%",
-                `/${precontrollerJsName}`
+                `/${loadingPageScriptName}`
               )
             })
           );
@@ -1771,25 +1812,34 @@ _debug("web-acc-res");
 const pluginWebAccessibleResources = () => {
   let config;
   let injectCss;
+  let browser;
   return [
     {
       name: "crx:web-accessible-resources",
       apply: "serve",
       enforce: "post",
+      async config(config2) {
+        const opts = await getOptions(config2);
+        browser = opts.browser || "chrome";
+      },
       renderCrxManifest(manifest) {
         manifest.web_accessible_resources = manifest.web_accessible_resources ?? [];
         manifest.web_accessible_resources = manifest.web_accessible_resources.map(({ resources, ...rest }) => ({
           resources: resources.filter((r) => r !== DYNAMIC_RESOURCE),
           ...rest
         })).filter(({ resources }) => resources.length);
-        manifest.web_accessible_resources.push({
-          // change the extension origin on every reload
-          use_dynamic_url: true,
+        const war = {
           // all web origins can access
           matches: ["<all_urls>"],
           // all resources are web accessible
-          resources: ["**/*", "*"]
-        });
+          resources: ["**/*", "*"],
+          // change the extension origin on every reload
+          use_dynamic_url: true
+        };
+        if (browser === "firefox") {
+          delete war.use_dynamic_url;
+        }
+        manifest.web_accessible_resources.push(war);
         return manifest;
       }
     },
@@ -1798,7 +1848,9 @@ const pluginWebAccessibleResources = () => {
       apply: "build",
       enforce: "post",
       async config({ build, ...config2 }, { command }) {
-        const { contentScripts: contentScripts2 = {} } = await getOptions(config2);
+        const opts = await getOptions(config2);
+        const contentScripts2 = opts.contentScripts || {};
+        browser = opts.browser || "chrome";
         injectCss = contentScripts2.injectCss ?? true;
         return { ...config2, build: { ...build, manifest: command === "build" } };
       },
@@ -1827,9 +1879,11 @@ const pluginWebAccessibleResources = () => {
           dynamicScriptMatches.add("https://*/*");
         }
         if (contentScripts.size > 0) {
+          const viteMajorVersion = parseInt(version.split(".")[0]);
+          const manifestPath = viteMajorVersion > 4 ? ".vite/manifest.json" : "manifest.json";
           const viteManifest = parseJsonAsset(
             bundle,
-            "manifest.json"
+            manifestPath
           );
           const viteFiles = /* @__PURE__ */ new Map();
           for (const [, file] of Object.entries(viteManifest))
@@ -1857,7 +1911,7 @@ const pluginWebAccessibleResources = () => {
                     { chunks: bundleChunks, files: viteFiles, config }
                   );
                   contentScripts.get(key).css = [...css];
-                  if (type === "loader")
+                  if (type === "loader" || isDynamicScript)
                     imports.add(fileName);
                   const resource = {
                     matches: isDynamicScript ? [...dynamicScriptMatches] : matches,
@@ -1908,6 +1962,11 @@ const pluginWebAccessibleResources = () => {
               use_dynamic_url
             });
           }
+        if (browser === "firefox") {
+          for (const war of combinedResources) {
+            delete war.use_dynamic_url;
+          }
+        }
         if (combinedResources.length === 0)
           delete manifest.web_accessible_resources;
         else
