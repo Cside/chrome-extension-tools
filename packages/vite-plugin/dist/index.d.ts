@@ -33,7 +33,12 @@ interface ManifestV3 {
     description?: string | undefined;
     icons?: chrome.runtime.ManifestIcons | undefined;
     action?: chrome.runtime.ManifestAction | undefined;
-    author?: string | undefined;
+    /**
+     * @see https://developer.chrome.com/docs/extensions/reference/manifest/author
+     */
+    author?: {
+        email: string;
+    } | undefined;
     background?: ChromeManifestBackground | FirefoxManifestBackground | undefined;
     chrome_settings_overrides?: {
         homepage?: string | undefined;

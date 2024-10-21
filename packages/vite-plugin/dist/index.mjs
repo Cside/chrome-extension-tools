@@ -59,7 +59,7 @@ function isCrxPlugin(p) {
   return !!p && typeof p === "object" && !(p instanceof Promise) && !Array.isArray(p) && p.name.startsWith("crx:");
 }
 
-var workerHmrClient = "const ownOrigin = new URL(chrome.runtime.getURL(\"/\")).origin;\nself.addEventListener(\"fetch\", (fetchEvent) => {\n  const url = new URL(fetchEvent.request.url);\n  if (url.origin === ownOrigin) {\n    fetchEvent.respondWith(sendToServer(url));\n  }\n});\nasync function sendToServer(url) {\n  url.protocol = \"http:\";\n  url.host = \"localhost\";\n  url.port = __SERVER_PORT__;\n  url.searchParams.set(\"t\", Date.now().toString());\n  const response = await fetch(url.href.replace(/=$|=(?=&)/g, \"\"));\n  return new Response(response.body, {\n    headers: {\n      \"Content-Type\": response.headers.get(\"Content-Type\") ?? \"text/javascript\"\n    }\n  });\n}\nconst ports = /* @__PURE__ */ new Set();\nchrome.runtime.onConnect.addListener((port) => {\n  if (port.name === \"@crx/client\") {\n    ports.add(port);\n    port.onDisconnect.addListener((port2) => ports.delete(port2));\n    port.onMessage.addListener((message) => {\n    });\n    port.postMessage({ data: JSON.stringify({ type: \"connected\" }) });\n  }\n});\nfunction notifyContentScripts(payload) {\n  const data = JSON.stringify(payload);\n  for (const port of ports)\n    port.postMessage({ data });\n}\nconsole.log(\"[vite] connecting...\");\nconst socketProtocol = __HMR_PROTOCOL__ || (location.protocol === \"https:\" ? \"wss\" : \"ws\");\nconst socketHost = `${__HMR_HOSTNAME__ || location.hostname}:${__HMR_PORT__}`;\nconst socket = new WebSocket(`${socketProtocol}://${socketHost}`, \"vite-hmr\");\nconst base = __BASE__ || \"/\";\nsocket.addEventListener(\"message\", async ({ data }) => {\n  handleSocketMessage(JSON.parse(data));\n});\nfunction isCrxHmrPayload(x) {\n  return x.type === \"custom\" && x.event.startsWith(\"crx:\");\n}\nfunction handleSocketMessage(payload) {\n  if (isCrxHmrPayload(payload)) {\n    handleCrxHmrPayload(payload);\n  } else if (payload.type === \"connected\") {\n    console.log(`[vite] connected.`);\n    const interval = setInterval(() => socket.send(\"ping\"), __HMR_TIMEOUT__);\n    socket.addEventListener(\"close\", () => clearInterval(interval));\n  }\n}\nfunction handleCrxHmrPayload(payload) {\n  notifyContentScripts(payload);\n  switch (payload.event) {\n    case \"crx:runtime-reload\":\n      console.log(\"[crx] runtime reload\");\n      chrome.runtime.reload();\n      break;\n  }\n}\nasync function waitForSuccessfulPing(ms = 1e3) {\n  while (true) {\n    try {\n      await fetch(`${base}__vite_ping`);\n      break;\n    } catch (e) {\n      await new Promise((resolve) => setTimeout(resolve, ms));\n    }\n  }\n}\nsocket.addEventListener(\"close\", async ({ wasClean }) => {\n  if (wasClean)\n    return;\n  console.log(`[vite] server connection lost. polling for restart...`);\n  await waitForSuccessfulPing();\n  handleCrxHmrPayload({\n    type: \"custom\",\n    event: \"crx:runtime-reload\"\n  });\n});\n";
+var workerHmrClient = "const ownOrigin = `chrome-extension://${chrome.runtime.id}`;\nself.addEventListener(\"fetch\", (fetchEvent) => {\n  const url = new URL(fetchEvent.request.url);\n  if (url.origin === ownOrigin) {\n    fetchEvent.respondWith(sendToServer(url));\n  }\n});\nasync function sendToServer(url) {\n  url.protocol = \"http:\";\n  url.host = \"localhost\";\n  url.port = __SERVER_PORT__;\n  url.searchParams.set(\"t\", Date.now().toString());\n  const response = await fetch(url.href.replace(/=$|=(?=&)/g, \"\"));\n  return new Response(response.body, {\n    headers: {\n      \"Content-Type\": response.headers.get(\"Content-Type\") ?? \"text/javascript\"\n    }\n  });\n}\nconst ports = /* @__PURE__ */ new Set();\nchrome.runtime.onConnect.addListener((port) => {\n  if (port.name === \"@crx/client\") {\n    ports.add(port);\n    port.onDisconnect.addListener((port2) => ports.delete(port2));\n    port.onMessage.addListener((message) => {\n    });\n    port.postMessage({ data: JSON.stringify({ type: \"connected\" }) });\n  }\n});\nfunction notifyContentScripts(payload) {\n  const data = JSON.stringify(payload);\n  for (const port of ports)\n    port.postMessage({ data });\n}\nconsole.log(\"[vite] connecting...\");\nconst socketProtocol = __HMR_PROTOCOL__ || (location.protocol === \"https:\" ? \"wss\" : \"ws\");\nconst socketHost = `${__HMR_HOSTNAME__ || location.hostname}:${__HMR_PORT__}`;\nconst socket = new WebSocket(`${socketProtocol}://${socketHost}`, \"vite-hmr\");\nconst base = __BASE__ || \"/\";\nsocket.addEventListener(\"message\", async ({ data }) => {\n  handleSocketMessage(JSON.parse(data));\n});\nfunction isCrxHmrPayload(x) {\n  return x.type === \"custom\" && x.event.startsWith(\"crx:\");\n}\nfunction handleSocketMessage(payload) {\n  if (isCrxHmrPayload(payload)) {\n    handleCrxHmrPayload(payload);\n  } else if (payload.type === \"connected\") {\n    console.log(`[vite] connected.`);\n    const interval = setInterval(() => socket.send(\"ping\"), __HMR_TIMEOUT__);\n    socket.addEventListener(\"close\", () => clearInterval(interval));\n  }\n}\nfunction handleCrxHmrPayload(payload) {\n  notifyContentScripts(payload);\n  switch (payload.event) {\n    case \"crx:runtime-reload\":\n      console.log(\"[crx] runtime reload\");\n      chrome.runtime.reload();\n      break;\n  }\n}\nasync function waitForSuccessfulPing(ms = 1e3) {\n  while (true) {\n    try {\n      await fetch(`${base}__vite_ping`);\n      break;\n    } catch (e) {\n      await new Promise((resolve) => setTimeout(resolve, ms));\n    }\n  }\n}\nsocket.addEventListener(\"close\", async ({ wasClean }) => {\n  if (wasClean)\n    return;\n  console.log(`[vite] server connection lost. polling for restart...`);\n  await waitForSuccessfulPing();\n  handleCrxHmrPayload({\n    type: \"custom\",\n    event: \"crx:runtime-reload\"\n  });\n});\n";
 
 const _debug = (id) => debug$3("crx").extend(id);
 const structuredClone = (obj) => {
@@ -1229,10 +1229,15 @@ const pluginHMR = () => {
       handleHotUpdate({ modules, server }) {
         const { root } = server.config;
         const relFiles = /* @__PURE__ */ new Set();
-        for (const m of modules)
+        const fsFiles = /* @__PURE__ */ new Set();
+        for (const m of modules) {
           if (m.id?.startsWith(root)) {
             relFiles.add(m.id.slice(server.config.root.length));
+          } else if (m.url?.startsWith("/@fs")) {
+            fsFiles.add(m.url);
           }
+        }
+        fsFiles.forEach((file) => update(file));
         if (inputManifestFiles.background.length) {
           const background = prefix$1("/", inputManifestFiles.background[0]);
           if (relFiles.has(background) || modules.some(isImporter(join(server.config.root, background)))) {
@@ -1800,7 +1805,7 @@ function compileFileResources(fileName, {
 const defineManifest = (manifest) => manifest;
 const defineDynamicResource = ({
   matches = ["http://*/*", "https://*/*"],
-  use_dynamic_url = true
+  use_dynamic_url = false
 }) => ({
   matches,
   resources: [DYNAMIC_RESOURCE],
@@ -1834,7 +1839,7 @@ const pluginWebAccessibleResources = () => {
           // all resources are web accessible
           resources: ["**/*", "*"],
           // change the extension origin on every reload
-          use_dynamic_url: true
+          use_dynamic_url: false
         };
         if (browser === "firefox") {
           delete war.use_dynamic_url;
@@ -1916,7 +1921,7 @@ const pluginWebAccessibleResources = () => {
                   const resource = {
                     matches: isDynamicScript ? [...dynamicScriptMatches] : matches,
                     resources: [...assets, ...imports],
-                    use_dynamic_url: isDynamicScript ? dynamicScriptDynamicUrl : true
+                    use_dynamic_url: isDynamicScript ? dynamicScriptDynamicUrl : false
                   };
                   if (isDynamicScript || !injectCss) {
                     resource.resources.push(...css);

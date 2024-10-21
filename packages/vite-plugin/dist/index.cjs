@@ -5,7 +5,7 @@ Object.defineProperty(exports, '__esModule', { value: true });
 const defineManifest = (manifest) => manifest;
 const defineDynamicResource = ({
   matches = ["http://*/*", "https://*/*"],
-  use_dynamic_url = true
+  use_dynamic_url = false
 }) => ({
   matches,
   resources: [DYNAMIC_RESOURCE],
